@@ -1,0 +1,9 @@
+pandas
+numpy<=2.4
+matplotlib
+seaborn
+scikit-learn
+lightgbm
+catboost
+xgboost
+shap
