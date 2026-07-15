@@ -1,84 +1,134 @@
-# Прогноз Revenue 7D
+# Revenue Forecast 7D
 
-## Структура репозиторію
+A comprehensive data science project for predicting 7-day user revenue combining SQL-based session analytics with machine learning forecasting.
 
-* `src/sql/query.sql` — рішення Завдання 1 (SQL). Розрахунок часу сесій користувачів.
-* `src/sql/README.md` — хід думок та прийняті рішення для SQL-частини.
-* `src/ipynb/model.ipynb` — рішення Завдання 2 (ML). Основний пайплайн підготовки даних, навчання двоетапної моделі (Hurdle model) на базі LightGBM та оцінка результатів.
-* `src/ipynb/comparison_of_models.ipynb` — порівняння різних ML-алгоритмів (CatBoost, XGBoost, LightGBM, Random Forest) на підготовлених даних.
-* `data/` — вхідні CSV з завдання та згенерований `final_data.csv` (детальніше — [data/README.md](data/README.md)).
-* `requirements.txt` — залежності Python.
+## 📊 Project Overview
 
----
+This project demonstrates end-to-end data processing and predictive modeling:
+- **SQL Analytics**: Efficient session duration calculations using BigQuery
+- **ML Pipeline**: Two-stage Hurdle model with CatBoost for revenue prediction
+- **Data Engineering**: Feature extraction from user behavior logs
+- **Model Comparison**: Benchmarking multiple algorithms (CatBoost, XGBoost, LightGBM, Random Forest)
 
-## Дані
+## 📁 Repository Structure
 
-Вхідні CSV-файли **не включені** в git. Їх потрібно покласти в папку `data/`:
+```
+├── src/
+│   ├── sql/
+│   │   ├── query.sql        # Session duration calculation query
+│   │   └── README.md        # SQL design decisions & optimizations
+│   └── ipynb/
+│       ├── model.ipynb      # Main EDA, feature engineering & model training
+│       └── comparison_of_models.ipynb  # Algorithm benchmarking
+├── data/
+│   ├── final_data.csv       # Generated after feature engineering
+│   └── README.md            # Data dictionary
+├── requirements.txt
+└── README.md
+```
 
-* `task_2_users_params.csv` — параметри користувачів + таргет `revenue_7d`
-* `task_2_users_actions.csv` — дії користувачів за перший день
+## 🔧 Tech Stack
 
-Після feature engineering `model.ipynb` зберігає підготовлений датасет у `data/final_data.csv`. Цей файл також не комітиться — його генерує перший ноутбук.
+- **SQL**: BigQuery with window functions for efficient analytics
+- **Python**: Pandas, Scikit-learn, CatBoost, XGBoost, LightGBM
+- **Validation**: TimeSeriesSplit to prevent data leakage
+- **Encoding**: One-Hot Encoding (low cardinality) + Frequency Encoding (high cardinality)
 
-Детальний опис файлів: [data/README.md](data/README.md).
+## 💡 Key Insights & Decisions
 
----
+### SQL Session Analytics
+- **Window Functions**: Used `LEAD()` to avoid costly JOINs and compute session close times efficiently
+- **Data Validation**: Filters for malformed sessions (e.g., consecutive `open` events without `close`)
+- **BigQuery Optimization**: Pre-filters data with `INTERVAL 11 DAY` to reduce table scans
+- **Assumption**: Sessions crossing midnight are counted in full toward their start date
 
-## Завдання 1: SQL (Аналіз сесій)
+### Machine Learning Architecture
 
-**Мета:** Порахувати сумарну кількість часу в неокруглених годинах, який кожен користувач провів на платформі за останні 10 днів.
+The core challenge: ~98% of users generate zero revenue (extreme class imbalance).
 
-### Прийняті рішення та оптимізація:
-* **Віконні функції:** Для уникнення ресурсоємних `JOIN` та знаходження часу закриття сесії використано `LEAD()`.
-* **Валідація подій:** Додано перевірку на `next_action = 'close'`, що дозволяє фільтрувати "биті" сесії (наприклад, два `open` поспіль без `close`).
-* **Оптимізація сканування (BigQuery):** Використана попередня фільтрація даних `INTERVAL 11 DAY` у підзапиті, щоб зменшити об'єм обробки (11-й день слугує буфером для сесій, що почалися раніше).
+**Solution: Two-Stage Hurdle Model**
+1. **Classification Stage**: Predicts probability of user making any purchase
+2. **Regression Stage**: Trained only on buyers; predicts purchase amount
+3. **Final Prediction**: `P(buyer) × Predicted_Amount`
 
-### Допущення та обмеження:
-* **Midnight Crossing:** Якщо сесія перетинає опівніч (почалась о 23:00, закінчилась о 02:00 наступного дня), весь розрахований час атрибутується до дати старту сесії (`session_start`). Необхідне розрізання сесій по днях (через `GENERATE_DATE_ARRAY`).
-* Часова зона залишена в стандартному UTC.
+### Model Performance
 
----
+Tested multiple algorithms on feature-engineered dataset:
 
-## Завдання 2: Machine Learning (Прогноз Revenue 7D)
+| Algorithm | MAE | Notes |
+|-----------|-----|-------|
+| **CatBoost** | ~0.94 | ✅ Best balance of classification & regression accuracy |
+| LightGBM | ~1.15 | Close second, faster training |
+| XGBoost | ~1.15 | Similar to LightGBM |
+| Random Forest | Higher | Baseline reference |
 
-**Мета:** Побудувати модель для передбачення `revenue_7d` (виручка за 7 днів) на основі даних про дії користувача в перший день (розбитих на чотири 6-годинні інтервали).
+## 🚀 Getting Started
 
-### Архітектура рішення
-Оскільки дані мають яскраво виражену проблему нулів (близько 98% користувачів нічого не купують), було обрано **двоетапну архітектуру**:
-1. **Модель класифікації:** Передбачає ймовірність того, що користувач взагалі здійснить платіж.
-2. **Модель регресії:** Навчається виключно на платниках (payers) і прогнозує потенційну суму платежу.
+### Prerequisites
+- Python 3.8+
+- Jupyter Notebook
 
-Фінальний прогноз генерується як: `P(payer) * Predicted_Amount`.
+### Setup
 
-### Валідація та Інженерія ознак
-* **Валідація:** Використано `TimeSeriesSplit`, щоб уникнути витоку даних з майбутнього в минуле (Data Leakage).
-* **Кодування ознак:** * Низька кардинальність: One-Hot Encoding.
-  * Висока кардинальність (`country`, `device_model`): Frequency Encoding із жорстким мапінгом тільки на Train вибірці.
+1. Clone the repository:
+```bash
+git clone https://github.com/Chuchman-Dima/Revenue-Forecast-7d.git
+cd Revenue-Forecast-7d
+```
 
-### Результати порівняння моделей
-Було проведено тестування кількох алгоритмів (`comparison_of_models.ipynb`):
-* **CatBoost** показав найкращу фінальну метрику **MAE (~0.94)**, забезпечивши оптимальну комбінацію точності класифікатора та регресора.
-* **LightGBM** та **XGBoost** показали близькі результати (~1.15).
-* **Random Forest** виступив у ролі базового baseline.
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
-### Напрямки для подальшого покращення
-Якщо розгортати модель у production:
-1. **Математична корекція логарифма:** При зворотному перетворенні `np.expm1()` з логарифмованого таргету в регресії виникає заниження очікуваного значення.
-2. **Бізнес-логіка:** Замість простого перемноження ймовірності на суму, варто підібрати оптимальний поріг ймовірності (threshold tuning) за PR-кривою для формування чітких сегментів "кого таргетувати".
+3. Place your data CSV files in `data/`:
+   - `task_2_users_params.csv` — User parameters + revenue target
+   - `task_2_users_actions.csv` — User actions from day 1
 
----
-## Як запустити проект
+   (See [data/README.md](data/README.md) for full details)
 
-1. Клонувати репозиторій.
-2. Встановити залежності: `pip install -r requirements.txt`.
-3. Покласти вхідні CSV у `data/` (див. [data/README.md](data/README.md)).
-4. Запустити ноутбуки **у такому порядку**:
-   1. `src/ipynb/model.ipynb` — EDA, feature engineering, навчання Hurdle-моделі; наприкінці підготовки даних зберігає `data/final_data.csv`.
-   2. `src/ipynb/comparison_of_models.ipynb` — порівняння алгоритмів на згенерованому `final_data.csv` (потребує кроку 1).
+### Running the Pipeline
 
-Запуск з кореня репозиторію:
+Execute notebooks in order:
 
 ```bash
 jupyter notebook src/ipynb/model.ipynb
+```
+This notebook handles:
+- Exploratory Data Analysis (EDA)
+- Feature engineering
+- Hurdle model training
+- Generates `data/final_data.csv`
+
+```bash
 jupyter notebook src/ipynb/comparison_of_models.ipynb
 ```
+This notebook:
+- Loads pre-engineered `final_data.csv`
+- Benchmarks multiple algorithms
+- Compares performance metrics
+
+## 📈 Future Improvements
+
+For production deployment:
+
+1. **Log-space Math**: Apply proper inverse transformation with `np.expm1()` when converting predictions from log scale
+2. **Dynamic Threshold**: Optimize classification threshold based on business KPIs rather than default 0.5
+3. **Feature Monitoring**: Track feature distribution drift in production
+4. **Model Versioning**: Implement MLflow or similar for experiment tracking
+5. **Cross-validation**: Expand testing beyond TimeSeriesSplit to multiple validation strategies
+
+## 📝 Design Notes
+
+- **Cardinality Handling**: High-cardinality features (`country`, `device_model`) use frequency encoding with strict train-set mapping to prevent data leakage
+- **Temporal Validation**: TimeSeriesSplit preserves temporal ordering of data
+- **Missing Data Strategy**: See individual notebooks for handling approach
+
+## 📄 License
+
+Personal project
+
+---
+
+**Author**: Chuchman-Dima  
+**Last Updated**: 2026
