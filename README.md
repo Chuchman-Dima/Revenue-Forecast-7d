@@ -127,5 +127,3 @@ jupyter notebook src/ipynb/comparison_of_models.ipynb
 
 # Автор
 **Чучман Дмитро**
-
-**Автор**: Chuchman-Dima  
