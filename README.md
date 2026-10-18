@@ -69,10 +69,3 @@
 └── requirements.txt
 ```
 
-## Запуск
-
-```bash
-pip install -r requirements.txt
-# покласти CSV у папку data/
-jupyter lab   # ноутбуки з папки notebooks/ запускати по порядку
-```
